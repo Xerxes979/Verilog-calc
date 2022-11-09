@@ -1,0 +1,568 @@
+//Aubrey Gatewood 8/2/2022, this is a multiplying calculator, see comments in code for operations, there is no backspace, sry. 
+
+
+
+`default_nettype none
+// Empty top module
+
+module top (
+  // I/O ports
+  input  logic hz100, reset,
+  input  logic [20:0] pb,
+  output logic [7:0] left, right,
+         ss7, ss6, ss5, ss4, ss3, ss2, ss1, ss0,
+  output logic red, green, blue,
+
+  // UART ports
+  output logic [7:0] txdata,
+  input  logic [7:0] rxdata,
+  output logic txclk, rxclk,
+  input  logic txready, rxready
+);
+
+  // Your code goes here...
+  
+  ///* // main calculator
+  // have to hit w 10 times to get the multiplication answer, math bomb style
+  logic [4:0] keycode;
+  logic negative;
+  logic strobe;
+  synckey sk1 (.clk(hz100), .rst(reset), .in(pb[19:0]), .strobe(strobe), .out(keycode));
+  logic [31:0] data;
+  digits d1 (.in(keycode), .out(data), .clk(strobe), .reset(reset), .neg(negative));
+  ssdec s0(.in(data[3:0]),   .out(ss0[6:0]), .enable(1'b1));
+  ssdec s1(.in(data[7:4]),   .out(ss1[6:0]), .enable(|data[31:4] == 1));
+  ssdec s2(.in(data[11:8]),  .out(ss2[6:0]), .enable(|data[31:8] == 1));
+  ssdec s3(.in(data[15:12]), .out(ss3[6:0]), .enable(|data[31:12] == 1));
+  ssdec s4(.in(data[19:16]), .out(ss4[6:0]), .enable(|data[31:16] == 1));
+  ssdec s5(.in(data[23:20]), .out(ss5[6:0]), .enable(|data[31:20] == 1));
+  ssdec s6(.in(data[27:24]), .out(ss6[6:0]), .enable(|data[31:24] == 1));
+  ssdec s7(.in(data[31:28]), .out(out7[6:0]), .enable(|data[31:28] == 1));
+  //make just a "-" if negative asserted
+  logic [6:0] out7;
+  assign ss7[6:0] = (negative)? 7'b1000000 : out7[6:0];
+  //*/
+  
+  // multiplication tester 8x1
+  /*
+  logic [31:0] p;
+  bcdmult8x1 bm1(.a(4), .b(32'h12345678), .p(p));
+  ssdec s0(.in(p[3:0]),   .out(ss0[6:0]), .enable(1));
+  ssdec s1(.in(p[7:4]),   .out(ss1[6:0]), .enable(1));
+  ssdec s2(.in(p[11:8]),  .out(ss2[6:0]), .enable(1));
+  ssdec s3(.in(p[15:12]), .out(ss3[6:0]), .enable(1));
+  ssdec s4(.in(p[19:16]), .out(ss4[6:0]), .enable(1));
+  ssdec s5(.in(p[23:20]), .out(ss5[6:0]), .enable(1));
+  ssdec s6(.in(p[27:24]), .out(ss6[6:0]), .enable(1));
+  ssdec s7(.in(p[31:28]), .out(ss7[6:0]), .enable(1));
+  //*/
+  
+  
+  /* testing 8x8
+  logic [31:0] p;
+  bcdmult8x8 bm1(.clk(pb[16]), .reset(pb[17]), .a(32'h00000078), .b(32'h00000078), .p(p));
+  ssdec s0(.in(p[3:0]),   .out(ss0[6:0]), .enable(1));
+  ssdec s1(.in(p[7:4]),   .out(ss1[6:0]), .enable(1));
+  ssdec s2(.in(p[11:8]),  .out(ss2[6:0]), .enable(1));
+  ssdec s3(.in(p[15:12]), .out(ss3[6:0]), .enable(1));
+  ssdec s4(.in(p[19:16]), .out(ss4[6:0]), .enable(1));
+  ssdec s5(.in(p[23:20]), .out(ss5[6:0]), .enable(1));
+  ssdec s6(.in(p[27:24]), .out(ss6[6:0]), .enable(1));
+  ssdec s7(.in(p[31:28]), .out(ss7[6:0]), .enable(1));
+  //*/
+endmodule
+
+// Add more modules down here...
+
+module bcdmult8x8 (
+  input logic clk, reset, 
+  input logic [31:0] a, b, 
+  output logic [31:0] p
+);
+  logic [31:0] accum, tmpa, tmpb, tmpout, tmpaccum;
+  //assign tmpa = a;
+  //assign tmpb = b;
+  assign p = accum;
+  always_ff @ (posedge clk) begin
+    if (reset) begin
+      accum <= 0;
+      tmpa <= a;
+      tmpb <= b;
+    end
+    else begin
+      accum <= tmpaccum;
+      tmpa <= tmpa >> 4;
+      tmpb <= tmpb << 4;
+    end
+  end
+  bcdmult8x1 bm1(.a(tmpa[3:0]), .b(tmpb), .p(tmpout)); // a is 1 bit, b is 32
+  bcdadd8 ba1(.a(tmpout), .b(accum), .ci(0), .s(tmpaccum));//breaks output when b is tmpaccum, tmpaccum1 just leaves 0s
+  
+endmodule
+
+module bcdmult8x1(
+  input logic [3:0] a, 
+  input logic [31:0] b,
+  output logic [31:0] p
+);
+  logic [31:0] tmpa, tmpb;
+  logic [7:0] tmpco;
+  bcdmult1x1 b1(.a(a), .b(b[3:0]), .p({tmpa[3:0],p[3:0]}));
+  bcdmult1x1 b2(.a(a), .b(b[7:4]), .p({tmpa[7:4], tmpb[3:0]}));
+  bcdmult1x1 b3(.a(a), .b(b[11:8]), .p({tmpa[11:8], tmpb[7:4]}));
+  bcdmult1x1 b4(.a(a), .b(b[15:12]), .p({tmpa[15:12], tmpb[11:8]}));
+  bcdmult1x1 b5(.a(a), .b(b[19:16]), .p({tmpa[19:16], tmpb[15:12]}));
+  bcdmult1x1 b6(.a(a), .b(b[23:20]), .p({tmpa[23:20], tmpb[19:16]}));
+  bcdmult1x1 b7(.a(a), .b(b[27:24]), .p({tmpa[27:24], tmpb[23:20]}));
+  bcdmult1x1 b8(.a(a), .b(b[31:28]), .p({tmpa[31:28], tmpb[27:24]}));
+
+  bcdadd1 ba1(.a(tmpa[3:0]), .b(tmpb[3:0]), .ci(0), .co(tmpco[0]), .s(p[7:4]));
+  bcdadd1 ba2(.a(tmpa[7:4]), .b(tmpb[7:4]), .ci(tmpco[0]), .co(tmpco[1]), .s(p[11:8]));
+  bcdadd1 ba3(.a(tmpa[11:8]), .b(tmpb[11:8]), .ci(tmpco[1]), .co(tmpco[2]), .s(p[15:12]));
+  bcdadd1 ba4(.a(tmpa[15:12]), .b(tmpb[15:12]), .ci(tmpco[2]), .co(tmpco[3]), .s(p[19:16]));
+  bcdadd1 ba5(.a(tmpa[19:16]), .b(tmpb[19:16]), .ci(tmpco[3]), .co(tmpco[4]), .s(p[23:20]));
+  bcdadd1 ba6(.a(tmpa[23:20]), .b(tmpb[23:20]), .ci(tmpco[4]), .co(tmpco[5]), .s(p[27:24]));
+  bcdadd1 ba7(.a(tmpa[27:24]), .b(tmpb[27:24]), .ci(tmpco[5]), .co(tmpco[6]), .s(p[31:28]));
+endmodule
+
+module bcdmult1x1(input logic [3:0]a,b, output logic [7:0] p);
+  always_comb
+    casez({a,b})
+      8'b0000????: p = 0;
+      8'b????0000: p = 0;
+      8'b0001????: p = {4'b0,b};
+      8'b????0001: p = {4'b0,a};
+      8'h22: p = 8'h04;
+      8'h23: p = 8'h06;
+      8'h24: p = 8'h08;
+      8'h25: p = 8'h10;
+      8'h26: p = 8'h12;
+      8'h27: p = 8'h14;
+      8'h28: p = 8'h16;
+      8'h29: p = 8'h18;
+      8'h32: p = 8'h06;
+      8'h33: p = 8'h09;
+      8'h34: p = 8'h12;
+      8'h35: p = 8'h15;
+      8'h36: p = 8'h18;
+      8'h37: p = 8'h21;
+      8'h38: p = 8'h24;
+      8'h39: p = 8'h27;
+      8'h42: p = 8'h08;
+      8'h43: p = 8'h12;
+      8'h44: p = 8'h16;
+      8'h45: p = 8'h20;
+      8'h46: p = 8'h24;
+      8'h47: p = 8'h28;
+      8'h48: p = 8'h32;
+      8'h49: p = 8'h36;
+      8'h52: p = 8'h10;
+      8'h53: p = 8'h15;
+      8'h54: p = 8'h20;
+      8'h55: p = 8'h25;
+      8'h56: p = 8'h30;
+      8'h57: p = 8'h35;
+      8'h58: p = 8'h40;
+      8'h59: p = 8'h45;
+      8'h62: p = 8'h12;
+      8'h63: p = 8'h18;
+      8'h64: p = 8'h24;
+      8'h65: p = 8'h30;
+      8'h66: p = 8'h36;
+      8'h67: p = 8'h42;
+      8'h68: p = 8'h48;
+      8'h69: p = 8'h54;
+      8'h72: p = 8'h14;
+      8'h73: p = 8'h21;
+      8'h74: p = 8'h28;
+      8'h75: p = 8'h35;
+      8'h76: p = 8'h42;
+      8'h77: p = 8'h49;
+      8'h78: p = 8'h56;
+      8'h79: p = 8'h63;
+      8'h82: p = 8'h16;
+      8'h83: p = 8'h24;
+      8'h84: p = 8'h32;
+      8'h85: p = 8'h40;
+      8'h86: p = 8'h48;
+      8'h87: p = 8'h56;
+      8'h88: p = 8'h64;
+      8'h89: p = 8'h72;
+      8'h92: p = 8'h18;
+      8'h93: p = 8'h27;
+      8'h94: p = 8'h36;
+      8'h95: p = 8'h45;
+      8'h96: p = 8'h54;
+      8'h97: p = 8'h63;
+      8'h98: p = 8'h72;
+      8'h99: p = 8'h81;
+      default: p = 0;
+    endcase
+endmodule
+
+//X is backspace
+//Y is addition
+//Z is subtraction
+//W is enter
+module digits(
+  input logic [4:0] in,
+  output logic [31:0] out,
+  input logic clk, reset,
+  output logic neg
+);
+  logic [31:0] current, save, result, tmp, negtmp;
+  logic [7:0] full;
+  logic [3:0] op, stage;
+  logic show;
+  math m(.op(op), .a(save), .b(current), .r(result), .clk(clk), .reset(stage == 0));
+  always_comb begin
+    if(show == 0) begin
+      tmp = current;
+    end
+    else begin
+      tmp = save; 
+    end
+  end
+  assign neg = (tmp[31:28] == 4'd9)? 1 : 0; // ternary operator works in place of the always_comb
+  bcdaddsub8 basneg(.a(0), .b(tmp), .op(1), .s(negtmp));
+  assign out[31:0] = (neg == 1)? negtmp[31:0] : tmp[31:0];
+  always_ff @ (posedge clk, posedge reset) begin
+    if (reset) begin
+      current <= 32'b0;
+      save <= 32'b0;
+      op <= 0;
+      show <= 0;
+      full <= 0;
+      stage <= 0;
+    end
+    else begin
+      casez(in)
+        5'b00???: begin // new digit 0-7
+          if (show == 1) begin
+            current <= {28'b0, in[3:0]};
+            show <= 0;
+            if (in[3:0] != 0)
+              full <= 8'b00000001;
+          end
+          else begin
+          //shift only if not a leading 0
+            if (full != 8'b11111111) begin
+              current <= {current[27:0], in[3:0]};
+              if (full[0] == 1 | in != 0)
+                full <= {full[6:0],1'b1};
+            end
+          end
+        end
+        5'b0100?: begin // new digit 8 or 9
+          if (show == 1) begin
+            current <= {28'b0, in[3:0]};
+            show <= 0;
+            if (in[3:0] != 0)
+              full <= 8'b00000001;
+          end
+          else begin
+          //shift only if not a leading 0
+            if (full != 8'b11111111) begin
+              current <= {current[27:0], in[3:0]};
+              if (full[0] == 1 | in != 0)
+                full <= {full[6:0],1'b1};
+            end
+          end
+        end
+        5'b10000: begin // W, enter
+          if (op == 4'd2) begin
+            if (stage < 9)
+              stage <= stage + 1;
+            else begin
+              stage <= 0;
+              full <= 0;
+              save <= result;
+              show <= 1;
+            end
+          end
+          else begin
+            full <= 0;
+            save <= result;
+            show <= 1;
+          end
+        end
+        5'b10001: begin // X, multiply
+          op <= 2;
+          full <= 0;
+          if (show == 0)
+            save <= current;
+          current <= 0;
+          show <= 1;
+        end
+        5'b10010: begin // Y, add
+          op <= 0;
+          full <= 0;
+          if (show == 0)
+            save <= current;
+          current <= 0;
+          show <= 1;
+        end
+        5'b10011: begin // Z, subtract
+          op <= 1;
+          full <= 0;
+          if (show == 0)
+            save <= current;
+          current <= 0;
+          show <= 1;
+        end
+        default: ;//current <= 32'b0; // this is now a problem
+      endcase
+    end
+  end
+endmodule
+
+module math( // use bcdaddsub8
+  input logic [3:0] op,
+  input logic clk, reset,
+  input logic [31:0] a,b,
+  output logic [31:0] r
+);
+  logic [31:0] prod, tmpr;
+  bcdaddsub8 bas1(.a(a), .b(b), .op(op[0]), .s(tmpr));
+  bcdmult8x8 bm1(.clk(clk), .reset(reset), .a(a), .b(b), .p(prod));
+  ///*
+  always_comb begin
+    case (op)
+      0: r = tmpr;
+      1: r = tmpr;
+      2: r = prod;
+      default: r = 0;
+    endcase
+  end
+  //*/
+endmodule
+
+module synckey(
+  input logic clk, rst,
+  input [19:0] in,
+  output [4:0] out,
+  output logic strobe
+);
+  assign out[0] = in[1] | in[3] | in[5] | in[7] | in[9] | in[11] | in[13] | in[15] | in[17] | in[19];
+  assign out[1] = in[2] | in[3] | in[6] | in[7] | in[10] | in[11] | in[14] | in[15] | in[18] | in[19];
+  assign out[2] = in[4] | in[5] | in[6] | in[7] | in[12] | in[13] | in[14] | in[15];
+  assign out[3] = in[8] | in[9] | in[10] | in[11] | in[12] | in[13] | in[14] | in[15];
+  assign out[4] = in[16] | in[17] | in[18] | in[19];
+  
+  logic [1:0] delay;
+  assign strobe = delay[1];
+  logic keyclk;
+  assign keyclk = |in[19:0];
+  
+  always_ff @ (posedge clk) begin
+    delay <= (delay << 1) | {1'b0,keyclk};
+  end
+endmodule
+
+module bcdaddsub8(
+  input logic [31:0] a, b,
+  input logic op,
+  output logic [31:0] s
+);
+  //if op is 0, we take b and add
+  //if op is 1, we take 9 comp of b and add
+  logic [31:0] b2;
+  logic [31:0] b3;
+  bcd9comp1 c0(.in(b[3:0]), .out(b2[3:0]));
+  bcd9comp1 c1(.in(b[7:4]), .out(b2[7:4]));
+  bcd9comp1 c2(.in(b[11:8]), .out(b2[11:8]));
+  bcd9comp1 c3(.in(b[15:12]), .out(b2[15:12]));
+  bcd9comp1 c4(.in(b[19:16]), .out(b2[19:16]));
+  bcd9comp1 c5(.in(b[23:20]), .out(b2[23:20]));
+  bcd9comp1 c6(.in(b[27:24]), .out(b2[27:24]));
+  bcd9comp1 c7(.in(b[31:28]), .out(b2[31:28]));
+  always_comb begin
+    if (op)
+      b3 = b2;
+    else
+      b3 = b;
+  end
+  bcdadd8 ba1(.a(a), .b(b3), .ci(op), .s(s));
+endmodule
+
+module bcd9comp1(
+  input logic [3:0] in,
+  output logic [3:0] out
+);
+  always_comb
+    case (in)
+      4'b0000: out = 4'b1001;
+      4'b0001: out = 4'b1000;
+      4'b0010: out = 4'b0111;
+      4'b0011: out = 4'b0110;
+      4'b0100: out = 4'b0101;
+      4'b0101: out = 4'b0100;
+      4'b0110: out = 4'b0011;
+      4'b0111: out = 4'b0010;
+      4'b1000: out = 4'b0001;
+      4'b1001: out = 4'b0000;
+      default: out = 4'b0000;
+    endcase
+endmodule
+
+module bcdadd8(
+  input logic [31:0] a,b,
+  input logic ci,
+  output logic co,
+  output logic [31:0] s
+);
+  logic co1, co2, co3, co4, co5, co6, co7;
+  bcdadd1 ba1(.a(a[3:0]), .b(b[3:0]), .ci(ci), .co(co1), .s(s[3:0]));
+  bcdadd1 ba2(.a(a[7:4]), .b(b[7:4]), .ci(co1), .co(co2), .s(s[7:4]));
+  bcdadd1 ba3(.a(a[11:8]), .b(b[11:8]), .ci(co2), .co(co3), .s(s[11:8]));
+  bcdadd1 ba4(.a(a[15:12]), .b(b[15:12]), .ci(co3), .co(co4), .s(s[15:12]));
+  bcdadd1 ba5(.a(a[19:16]), .b(b[19:16]), .ci(co4), .co(co5), .s(s[19:16]));
+  bcdadd1 ba6(.a(a[23:20]), .b(b[23:20]), .ci(co5), .co(co6), .s(s[23:20]));
+  bcdadd1 ba7(.a(a[27:24]), .b(b[27:24]), .ci(co6), .co(co7), .s(s[27:24]));
+  bcdadd1 ba8(.a(a[31:28]), .b(b[31:28]), .ci(co7), .co(co), .s(s[31:28]));
+  
+endmodule
+
+
+module bcdadd1( //should never receive more than 9 and 9 and 1 carry in
+  input logic [3:0] a, b,
+  input logic ci,
+  output logic co, 
+  output logic [3:0] s
+);
+  logic [3:0] tempout;
+  logic tempCo;
+  fa4 f1(.a(a[3:0]), .b(b[3:0]), .ci(ci), .s(tempout[3:0]), .co(tempCo));
+  logic a2;
+  logic emptyOut;
+  assign a2 = ((tempout[1] & tempout[3]) | (tempout[2] & tempout[3]) | (tempCo));
+  fa4 f2(.a({1'b0, a2, a2, 1'b0}), .b(tempout[3:0]), .ci(1'b0), .s(s[3:0]), .co(emptyOut));
+  assign co = a2;
+endmodule
+
+
+module addsub8(
+  input logic op,
+  input logic [7:0] a, b,
+  output logic [7:0] s,
+  output logic co
+);
+  logic [7:0] newB;
+  assign newB[7] = b[7] ^ op;
+  assign newB[6] = b[6] ^ op;
+  assign newB[5] = b[5] ^ op;
+  assign newB[4] = b[4] ^ op;
+  assign newB[3] = b[3] ^ op;
+  assign newB[2] = b[2] ^ op;
+  assign newB[1] = b[1] ^ op;
+  assign newB[0] = b[0] ^ op;
+  cla8 cl1(.a(a[7:0]), .b(newB[7:0]), .ci(op), .s(s[7:0]), .co(co));
+endmodule
+
+
+module cla8(
+  input logic [7:0] a, b,
+  input logic ci,
+  output logic [7:0] s,
+  output logic co
+);
+  logic [7:0] g, p;
+  ha h1(.a(a[0]), .b(b[0]), .s(p[0]), .co(g[0]));
+  ha h2(.a(a[1]), .b(b[1]), .s(p[1]), .co(g[1]));
+  ha h3(.a(a[2]), .b(b[2]), .s(p[2]), .co(g[2]));
+  ha h4(.a(a[3]), .b(b[3]), .s(p[3]), .co(g[3]));
+  ha h5(.a(a[4]), .b(b[4]), .s(p[4]), .co(g[4]));
+  ha h6(.a(a[5]), .b(b[5]), .s(p[5]), .co(g[5]));
+  ha h7(.a(a[6]), .b(b[6]), .s(p[6]), .co(g[6]));
+  ha h8(.a(a[7]), .b(b[7]), .s(p[7]), .co(g[7]));
+  assign s[0] = p[0] ^ ci;
+  assign s[1] = p[1] ^ (g[0] | ci & p[0]);
+  assign s[2] = p[2] ^ (g[1] | g[0] & p[1] | ci & &p[1:0]);
+  assign s[3] = p[3] ^ (g[2] | g[1] & p[2] | g[0] & &p[2:1] | ci & &p[2:0]);
+  assign s[4] = p[4] ^ (g[3] | g[2] & p[3] | g[1] & &p[3:2] | g[0] & &p[3:1] | ci & &p[3:0]);
+  assign s[5] = p[5] ^ (g[4] | g[3] & p[4] | g[2] & &p[4:3] | g[1] & &p[4:2] | g[0] & &p[4:1] | ci & &p[4:0]);
+  assign s[6] = p[6] ^ (g[5] | g[4] & p[5] | g[3] & &p[5:4] | g[2] & &p[5:3] | g[1] & &p[5:2] | g[0] & &p[5:1] | ci & &p[5:0]);
+  assign s[7] = p[7] ^ (g[6] | g[5] & p[6] | g[4] & &p[6:5] | g[3] & &p[6:4] | g[2] & &p[6:3] | g[1] & &p[6:2] | g[0] & &p[6:1] | ci & &p[6:0]);
+  assign co = g[7] | g[6] & p[7] | g[5] & &p[7:6] | g[4] & &p[7:5] | g[3] & &p[7:4] | g[2] & &p[7:3] | g[1] & &p[7:2] | g[0] & &p[7:1] | ci & &p[7:0];
+endmodule
+
+module fa4(
+  input logic [3:0] a, b,
+  input logic ci,
+  output logic [3:0] s,
+  output logic co
+);
+  logic cout1, cout2, cout3;
+  fa f1(.a(a[0]), .b(b[0]), .ci(ci), .s(s[0]), .co(cout1));
+  fa f2(.a(a[1]), .b(b[1]), .ci(cout1), .s(s[1]), .co(cout2));
+  fa f3(.a(a[2]), .b(b[2]), .ci(cout2), .s(s[2]), .co(cout3));
+  fa f4(.a(a[3]), .b(b[3]), .ci(cout3), .s(s[3]), .co(co));
+  
+endmodule
+
+
+module fa(
+  input logic a, b, ci,
+  output logic s, co
+);
+  assign s = a ^ b ^ ci;
+  assign co = a & b | a & ci | b & ci;
+endmodule
+
+module faha(
+  input logic a, b, ci,
+  output logic s, co
+);
+  logic tempX;
+  logic Cout1;
+  logic Cout2;
+  ha ha1(.a(a), .b(b), .s(tempX), .co(Cout1));
+  ha ha2(.a(tempX), .b(ci), .s(s), .co(Cout2));
+  assign co = Cout1 | Cout2;
+endmodule
+
+module ha(
+  input logic a, b,
+  output logic s, co
+);
+  assign s = a ^ b;
+  assign co = a & b;
+endmodule
+
+
+module ssdec( // 7 segment decoder
+  input logic [3:0] in,
+  output logic [6:0] out,
+  input logic enable
+);
+
+  logic [6:0] seg7 [15:0];
+  logic [6:0] dummy;
+  
+  assign seg7[4'h0] = 7'b0111111;
+  assign seg7[4'h1] = 7'b0000110;
+  assign seg7[4'h2] = 7'b1011011;
+  assign seg7[4'h3] = 7'b1001111;
+  assign seg7[4'h4] = 7'b1100110;
+  assign seg7[4'h5] = 7'b1101101;
+  assign seg7[4'h6] = 7'b1111101;
+  assign seg7[4'h7] = 7'b0000111;
+  assign seg7[4'h8] = 7'b1111111;
+  assign seg7[4'h9] = 7'b1100111;
+  assign seg7[4'ha] = 7'b1110111;
+  assign seg7[4'hb] = 7'b1111100;
+  assign seg7[4'hc] = 7'b0111001;
+  assign seg7[4'hd] = 7'b1011110;
+  assign seg7[4'he] = 7'b1111001;
+  assign seg7[4'hf] = 7'b1110001;
+  
+  assign dummy = seg7[in];
+  assign out[0] = dummy[0] && enable;
+  assign out[1] = dummy[1] && enable;
+  assign out[2] = dummy[2] && enable;
+  assign out[3] = dummy[3] && enable;
+  assign out[4] = dummy[4] && enable;
+  assign out[5] = dummy[5] && enable;
+  assign out[6] = dummy[6] && enable;
+
+endmodule
